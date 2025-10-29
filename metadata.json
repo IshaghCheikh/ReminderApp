@@ -1,0 +1,5 @@
+{
+  "name": "Daily Planner & Notifier",
+  "description": "An application to plan your daily activities and get notified at the right time. It prompts you every morning to set your plan for the day.",
+  "requestFramePermissions": []
+}
