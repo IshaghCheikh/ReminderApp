@@ -4,6 +4,7 @@ import type { Activity, NotificationPermission } from './types';
 import WelcomeView from './components/WelcomeView';
 import PlannerView from './components/PlannerView';
 import { BellIcon } from './components/icons';
+import IOSInstallPrompt from './components/IOSInstallPrompt';
 
 const App: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -31,6 +32,60 @@ const App: React.FC = () => {
       )
     );
   }, []);
+  
+  const checkAndSendNotifications = useCallback(() => {
+    const now = new Date();
+    const today = getTodayDateString();
+
+    // 1. Check for activity reminders
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    activitiesRef.current.forEach(activity => {
+        if (activity.time === currentTime && !activity.notified) {
+            if (permissionRef.current === 'granted') {
+                new Notification('Activity Reminder!', {
+                    body: activity.text,
+                    icon: '/vite.svg',
+                });
+            }
+            markAsNotified(activity.id);
+        }
+    });
+
+    // 2. Check for the daily 7:30 AM planning prompt notification
+    const lastPromptNotificationDate = localStorage.getItem('lastDailyPromptNotificationDate');
+    const is730AM = now.getHours() === 7 && now.getMinutes() === 30;
+
+    if (is730AM && lastPromptNotificationDate !== today && permissionRef.current === 'granted') {
+        new Notification('Time to plan your day!', {
+            body: 'Good morning! What are your goals for today?',
+            icon: '/vite.svg',
+        });
+        localStorage.setItem('lastDailyPromptNotificationDate', today);
+    }
+  }, [getTodayDateString, markAsNotified]);
+
+  const checkAndSetDailyView = useCallback(() => {
+    setShowWelcome(currentShowWelcome => {
+        if (currentShowWelcome) {
+            return true; // Already showing, no change needed
+        }
+        const now = new Date();
+        const today = getTodayDateString();
+        const lastPlanDate = localStorage.getItem('lastPlanDate');
+        const shouldShowWelcomeNow =
+            lastPlanDate !== today &&
+            (now.getHours() > 7 || (now.getHours() === 7 && now.getMinutes() >= 30));
+
+        if (shouldShowWelcomeNow) {
+            setActivities([]);
+            localStorage.removeItem(`plan-${today}`);
+            return true;
+        }
+
+        return false;
+    });
+  }, [getTodayDateString]);
+
 
   // Effect for initialization on mount
   useEffect(() => {
@@ -59,63 +114,33 @@ const App: React.FC = () => {
     setIsInitialized(true);
   }, [getTodayDateString]);
 
-  // Effect for periodic checks (reminders and daily prompt)
+  // Effect for periodic checks and visibility changes
   useEffect(() => {
     if (!isInitialized) return;
 
-    const intervalId = setInterval(() => {
-      const now = new Date();
-      const today = getTodayDateString();
+    const performChecks = () => {
+        checkAndSendNotifications();
+        checkAndSetDailyView();
+    };
 
-      // 1. Check for activity reminders
-      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      activitiesRef.current.forEach(activity => {
-        if (activity.time === currentTime && !activity.notified) {
-          if (permissionRef.current === 'granted') {
-            new Notification('Activity Reminder!', {
-              body: activity.text,
-              icon: '/vite.svg', 
-            });
-          }
-          markAsNotified(activity.id);
+    // Run checks immediately when app becomes visible
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            performChecks();
         }
-      });
-      
-      // 2. Check for the daily 7:30 AM planning prompt notification
-      const lastPromptNotificationDate = localStorage.getItem('lastDailyPromptNotificationDate');
-      const is730AM = now.getHours() === 7 && now.getMinutes() === 30;
+    };
 
-      if (is730AM && lastPromptNotificationDate !== today && permissionRef.current === 'granted') {
-          new Notification('Time to plan your day!', {
-              body: 'Good morning! What are your goals for today?',
-              icon: '/vite.svg',
-          });
-          localStorage.setItem('lastDailyPromptNotificationDate', today);
-      }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-      // 3. Check if it's time to show the daily prompt UI
-      setShowWelcome(currentShowWelcome => {
-        if (currentShowWelcome) {
-          return true; // Already showing, no change needed
-        }
+    // Also run checks on an interval
+    const intervalId = setInterval(performChecks, 15000); // Check every 15 seconds
 
-        const lastPlanDate = localStorage.getItem('lastPlanDate');
-        const shouldShowWelcomeNow =
-          lastPlanDate !== today &&
-          (now.getHours() > 7 || (now.getHours() === 7 && now.getMinutes() >= 30));
-
-        if (shouldShowWelcomeNow) {
-          setActivities([]);
-          localStorage.removeItem(`plan-${today}`);
-          return true;
-        }
-
-        return false;
-      });
-    }, 15000); // Check every 15 seconds
-
-    return () => clearInterval(intervalId);
-  }, [isInitialized, markAsNotified, getTodayDateString]);
+    // Cleanup
+    return () => {
+        clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isInitialized, checkAndSendNotifications, checkAndSetDailyView]);
 
 
   useEffect(() => {
@@ -158,7 +183,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 font-sans">
+    <div className="flex flex-col min-h-screen bg-slate-900 font-sans">
       {permission === 'default' && (
         <div className="bg-sky-800 text-white p-3 text-center shadow-lg">
           <div className="container mx-auto flex items-center justify-center gap-4">
@@ -173,7 +198,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      <main className="container mx-auto p-4 md:p-6">
+      <main className="flex-grow container mx-auto p-4 md:p-6">
         {showWelcome ? (
           <WelcomeView onStart={handleStartDay} />
         ) : (
@@ -184,6 +209,7 @@ const App: React.FC = () => {
           />
         )}
       </main>
+      <IOSInstallPrompt />
     </div>
   );
 };

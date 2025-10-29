@@ -32,7 +32,7 @@ const PlannerView: React.FC<PlannerViewProps> = ({ activities, onAddActivity, on
   });
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-full">
         <header className="mb-6 text-center">
             <h1 className="text-4xl font-bold text-slate-100">Today's Plan</h1>
             <p className="text-slate-400 mt-1">{dateString}</p>
