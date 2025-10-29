@@ -9,7 +9,12 @@ import IOSInstallPrompt from './components/IOSInstallPrompt';
 const App: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [showWelcome, setShowWelcome] = useState<boolean>(false);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [isNotificationSupported] = useState<boolean>(
+    () => typeof window !== 'undefined' && 'Notification' in window
+  );
+  const [permission, setPermission] = useState<NotificationPermission>(
+    () => (typeof window !== 'undefined' && 'Notification' in window ? (Notification.permission as NotificationPermission) : 'denied')
+  );
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   
   const activitiesRef = useRef(activities);
@@ -41,7 +46,7 @@ const App: React.FC = () => {
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     activitiesRef.current.forEach(activity => {
         if (activity.time === currentTime && !activity.notified) {
-            if (permissionRef.current === 'granted') {
+            if (isNotificationSupported && permissionRef.current === 'granted') {
                 new Notification('Activity Reminder!', {
                     body: activity.text,
                     icon: '/vite.svg',
@@ -55,14 +60,19 @@ const App: React.FC = () => {
     const lastPromptNotificationDate = localStorage.getItem('lastDailyPromptNotificationDate');
     const is730AM = now.getHours() === 7 && now.getMinutes() === 30;
 
-    if (is730AM && lastPromptNotificationDate !== today && permissionRef.current === 'granted') {
+    if (
+      isNotificationSupported &&
+      is730AM &&
+      lastPromptNotificationDate !== today &&
+      permissionRef.current === 'granted'
+    ) {
         new Notification('Time to plan your day!', {
             body: 'Good morning! What are your goals for today?',
             icon: '/vite.svg',
         });
         localStorage.setItem('lastDailyPromptNotificationDate', today);
     }
-  }, [getTodayDateString, markAsNotified]);
+  }, [getTodayDateString, markAsNotified, isNotificationSupported]);
 
   const checkAndSetDailyView = useCallback(() => {
     setShowWelcome(currentShowWelcome => {
@@ -91,7 +101,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const today = getTodayDateString();
     const lastPlanDate = localStorage.getItem('lastPlanDate');
-    const storedPermission = Notification.permission as NotificationPermission;
+    const storedPermission = isNotificationSupported
+      ? (Notification.permission as NotificationPermission)
+      : 'denied';
     setPermission(storedPermission);
 
     const now = new Date();
@@ -112,7 +124,7 @@ const App: React.FC = () => {
     }
     
     setIsInitialized(true);
-  }, [getTodayDateString]);
+  }, [getTodayDateString, isNotificationSupported]);
 
   // Effect for periodic checks and visibility changes
   useEffect(() => {
@@ -151,6 +163,11 @@ const App: React.FC = () => {
   }, [activities, isInitialized, getTodayDateString]);
 
   const requestNotificationPermission = async () => {
+    if (!isNotificationSupported) {
+      setPermission('denied');
+      return;
+    }
+
     const result = await Notification.requestPermission();
     setPermission(result as NotificationPermission);
   };
@@ -184,7 +201,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-900 font-sans">
-      {permission === 'default' && (
+      {isNotificationSupported && permission === 'default' && (
         <div className="bg-sky-800 text-white p-3 text-center shadow-lg">
           <div className="container mx-auto flex items-center justify-center gap-4">
             <BellIcon className="w-6 h-6"/>
